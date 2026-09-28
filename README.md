@@ -38,7 +38,9 @@ This system monitors Telegram channels for trading signals (primarily GOLD/XAUUS
 - Telegram API credentials
 - OpenAI API key (for LLM parsing)
 
-Note: For WSL/Linux setup (including MT5 via Wine/Docker using `mt5linux`), see [WSL Setup Guide](WSL_SETUP_GUIDE.md).
+Setup guides:
+- **Windows (native)** — see [Windows Startup Guide](WINDOWS_STARTUP_GUIDE.md)
+- **WSL/Linux** (including MT5 via Wine/Docker using `mt5linux`) — see [WSL Setup Guide](WSL_SETUP_GUIDE.md)
 
 ## Installation
 

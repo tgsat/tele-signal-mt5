@@ -1,329 +1,160 @@
-# 🪟 Windows Startup Guide - Telegram Signal EA
+# Windows Startup Guide - Telegram Signal EA
+
+Panduan menjalankan project **langsung di Windows (native)** dengan paket resmi `MetaTrader5` — tanpa WSL, tanpa shim, tanpa mt5linux.
 
 ## Quick Reference
+
 - **Project Type**: Telegram Signal Processing + MT5 Trading Automation
-- **Language**: Python 3.12.7
-- **Platform**: Windows with MetaTrader 5
-- **Database**: SQLite (local file)
+- **Bahasa**: Python 3.12.7+
+- **Platform**: Windows + MetaTrader 5 (paket `MetaTrader5` resmi berjalan native hanya di Windows)
+- **Database**: SQLite (file lokal di `data/signal_ea.db`)
 
 ---
 
-## 🚀 Initial Setup (First Time Only)
+## 1. Prasyarat Windows
 
-### 1. Prerequisites Installation
+- Windows 10/11
+- **MetaTrader 5** sudah terpasang dan **login ke akun broker**
+- **Python 3.12.7+** (unduh dari python.org, centang **Add python.exe to PATH**)
+- Akun Telegram + `api_id`/`api_hash` (dari my.telegram.org) dan API key OpenAI
+
+Pastikan **AutoTrading ON** di terminal MT5: `Tools → Options → Expert Advisors → Allow Algo Trading`.
+
+---
+
+## 2. Setup Project
+
 ```powershell
-# Install Python 3.12.7 from python.org
-# Download and install MetaTrader 5 from MetaQuotes
-# Ensure you have a Telegram account
-```
-
-### 2. Project Setup
-```powershell
-# Navigate to project directory
-cd telegram-signal-ea
-
-# Install dependencies
+cd C:\path\to\telegram-signal-mt5
+python -m venv venv
+venv\Scripts\activate
+pip install --upgrade pip
 pip install -r requirements.txt
+```
 
-# Copy environment template
+`requirements.txt` mem-pin `MetaTrader5==5.0.5200` — instalasi ini **sah di Windows** (paket Python resmi), tidak perlu guci Wine/mt5linux seperti di WSL.
+
+---
+
+## 3. Konfigurasi `.env`
+
+```powershell
 copy .env.example .env
+notepad .env
 ```
 
-### 3. Configure Environment (.env file)
+Isi minimal:
+
 ```bash
-# Edit .env with your actual credentials
-TELEGRAM_API_ID=your_api_id
-TELEGRAM_API_HASH=your_api_hash
-TELEGRAM_PHONE=your_phone_number
-TELEGRAM_SESSION_NAME=telegram_session
+# Telegram
+TELEGRAM_API_ID=12345
+TELEGRAM_API_HASH=xxxxxxxxxxxxxxxxxxxxxxxx
+PHONE_NUMBER=+62xxxxxxxxxxx
+TELEGRAM_GROUPS=@signalgroup1,@signalgroup2
 
-MT5_SERVER=your_broker_server
-MT5_LOGIN=your_account_number
-MT5_PASSWORD=your_password
+# OpenAI
+OPENAI_API_KEY=sk-xxxx
+OPENAI_MODEL_VARIANT=gpt-5-mini
 
-OPENAI_API_KEY=your_openai_key
+# MetaTrader5
+MT5_LOGIN=12345678
+MT5_PASSWORD=your_mt5_password
+MT5_SERVER=Broker-ServerName
+MT5_PATH=C:\Program Files\MetaTrader 5\terminal64.exe   # isi bila ingin auto-launch terminal
 
-DATABASE_URL=sqlite:///signal_ea.db
-LOG_LEVEL=INFO
+# Database
+DATABASE_URL=sqlite+aiosqlite:///data/signal_ea.db
 ```
+
+Catatan:
+- `MT5_PATH` opsional — diisi ke `terminal64.exe` bila ingin project men-launch terminal MT5 otomatis saat inisialisasi (`src/mt5_executor/connection.py`).
+- Seluruh key lengkap tersedia di `.env.example` (rate limit, monitoring, trading parameters).
 
 ---
 
-## 🧪 Testing Workflow (Step by Step)
+## 4. Setup Sesi Telegram
 
-### Phase 1: Component Testing
+Script `scripts/setup_session.py` belum tersedia di repo ini. Buat sesi dengan Telethon:
+
 ```powershell
-# Test 1: Verify installation
-python --version
-# Should show Python 3.12.7
+python -c @"
+import asyncio
+from telethon import TelegramClient
+from config.settings import settings
 
-# Test 2: Run unit tests
-python -m pytest tests/unit/ -v
-# All tests should pass
+async def main():
+    client = TelegramClient(str(settings.data_dir / 'telegram.session'),
+                            settings.get_telegram_api_id_int(),
+                            settings.telegram_api_hash)
+    await client.start(phone=settings.phone_number)
+    me = await client.get_me()
+    print('Session OK:', me.username or me.id)
+    await client.disconnect()
 
-# Test 3: Check database setup
-python -c "from src.database.models import init_db; init_db(); print('Database OK')"
+asyncio.run(main())
+"@
 ```
 
-### Phase 2: Connection Testing
-```powershell
-# Test 4: Telegram connection (first run will ask for phone verification)
-python -c "from src.telegram.client import TelegramClient; client = TelegramClient(); print('Telegram OK')"
-
-# Test 5: MT5 connection (MT5 must be running and logged in)
-python -c "from src.mt5.connection import MT5Connection; mt5 = MT5Connection(); print('MT5 Connected:', mt5.connect())"
-
-# Test 6: OpenAI API connection
-python -c "from src.llm.openai_client import OpenAIClient; client = OpenAIClient(); print('OpenAI OK')"
-```
-
-### Phase 3: Signal Processing Testing
-```powershell
-# Test 7: Signal parsing
-python -c "from src.signal_parser.french_parser import FrenchSignalParser; parser = FrenchSignalParser(); print('Parser ready')"
-
-# Test 8: Test with sample signal
-python tests/manual_tests/test_signal_sample.py
-```
-
-### Phase 4: Integration Testing
-```powershell
-# Test 9: Full integration test
-python -m pytest tests/integration/ -v
-
-# Test 10: End-to-end test (with real but small position)
-python tests/manual_tests/test_full_workflow.py
-```
+Masukkan kode verifikasi ketika diminta. Sesi tersimpan di `data\telegram.session`.
 
 ---
 
-## 🎯 Production Startup
+## 5. Verifikasi & Menjalankan
 
-### Normal Operation
 ```powershell
-# Start the main application
+pytest tests/unit/ -v
+```
+
+Cek koneksi MT5 (terminal harus terbuka & login):
+
+```powershell
+python -c "import MetaTrader5 as mt5; print(bool(mt5.initialize())); print(mt5.terminal_info()); mt5.shutdown()"
+```
+
+Jalankan aplikasi:
+
+```powershell
 python main.py
-
-# Alternative: Start with console dashboard
-python main.py --dashboard
-
-# Alternative: Start in debug mode
-python main.py --debug
 ```
 
-### Monitoring Commands
-```powershell
-# View live dashboard (separate terminal)
-python -c "from src.monitoring.console_dashboard import RichDashboard; dashboard = RichDashboard(); dashboard.run()"
-
-# Check system status
-python cli.py --status
-
-# View recent logs
-type logs/telegram_ea.log | findstr /C:"ERROR" /C:"WARNING"
-```
+CLI: `python cli.py start`, `python cli.py status`, `python cli.py stop`.
 
 ---
 
-## 🐛 Debugging Guide
+## 6. Auto-Start di Windows (opsional)
 
-### Common Issues & Solutions
+Gunakan **Task Scheduler** (nama task mis. `TelegramSignalEA`):
 
-#### 1. Telegram Authentication Fails
-```powershell
-# Delete session file and re-authenticate
-del telegram_session.session
-python -c "from src.telegram.client import TelegramClient; TelegramClient().start()"
-```
+- `Trigger`: At startup
+- `Action`: `C:\path\to\telegram-signal-mt5\venv\Scripts\python.exe main.py`
+- `Start in`: `C:\path\to\telegram-signal-mt5`
 
-#### 2. MT5 Connection Issues
-```powershell
-# Check MT5 is running and logged in
-# Verify .env credentials match MT5 account
-# Test connection manually:
-python -c "import MetaTrader5 as mt5; print('MT5 Available:', mt5.initialize())"
-```
-
-#### 3. Database Errors
-```powershell
-# Reset database (WARNING: deletes all data)
-del signal_ea.db
-python -c "from src.database.models import init_db; init_db(); print('Database reset')"
-```
-
-#### 4. Signal Parsing Issues
-```powershell
-# Test signal patterns
-python tests/manual_tests/debug_signal_parsing.py
-
-# Check regex patterns
-python -c "from src.signal_parser.patterns import SIGNAL_PATTERNS; print(len(SIGNAL_PATTERNS), 'patterns loaded')"
-```
-
-#### 5. OpenAI API Issues
-```powershell
-# Test API key
-python -c "import openai; client = openai.OpenAI(); print('Models:', [m.id for m in client.models.list().data[:3]])"
-```
-
-### Debug Logging
-```powershell
-# Enable debug logging (edit .env)
-LOG_LEVEL=DEBUG
-
-# View debug logs in real-time
-powershell Get-Content logs/telegram_ea.log -Wait | Select-String "DEBUG"
-```
-
-### Performance Monitoring
-```powershell
-# Check system resources
-python -c "import psutil; print(f'CPU: {psutil.cpu_percent()}%, RAM: {psutil.virtual_memory().percent}%')"
-
-# Monitor signal processing speed
-python -c "from src.monitoring.metrics_collector import MetricsCollector; mc = MetricsCollector(); print(mc.get_performance_stats())"
-```
+> Pastikan terminal MT5 + AutoTrading ikut aktif sebelum task berjalan (atur task MT5 dengan trigger login, atau start MT5 manual).
 
 ---
 
-## 📊 Health Checks
+## 7. Troubleshooting
 
-### Daily Health Check Script
-```powershell
-# Create and run daily_health_check.py
-python daily_health_check.py
-```
+| Gejala | Solusi |
+|--------|--------|
+| `pip install MetaTrader5==5.0.5200` gagal | Pastikan di Windows native (bukan WSL) dan Python 64-bit. |
+| `MT5 initialize() failed` / `Not available` | Terminal MT5 belum terbuka/login. Pastikan AutoTrading ON. |
+| `ModuleNotFoundError: config.settings` | Pastikan `main.py`/`cli.py` dipanggil dari root project (`Start in` benar di Task Scheduler). |
+| `MetaTrader5` error `Fatal` / DLL tidak ditemukan | Terminal MT5 harus versi 64-bit; tutup & buka ulang terminal, lalu jalankan terus `python main.py` dari folder project. |
+| `FloodWaitError` dari Telegram | Wajar di awal; sistem punya rate limiter (jeda 1–3 detik). |
+| Sesi Telegram corrupt/kedaluwarsa | Hapus `data\telegram.session`, ulangi Langkah 4. |
+| `python cli.py status` tidak merespons | Service/process belum jalan; cek log di `logs/app.log` (set `DEV_MODE=true` untuk output console). |
 
-### Health Check Components
-- ✅ Database connectivity
-- ✅ Telegram session active
-- ✅ MT5 connection status
-- ✅ OpenAI API availability
-- ✅ Signal queue processing
-- ✅ Disk space and memory usage
+Log aplikasi: `logs/app.log` (berputar, 10MB), `logs/error.log` (5MB), `logs/trades.log` (20MB).
 
 ---
 
-## 🚨 Emergency Procedures
+## 8. Checklist Selesai
 
-### Emergency Stop
-```powershell
-# From dashboard console
-STOP ALL
-
-# From command line
-python -c "from src.utils.emergency_stop import EmergencyStop; EmergencyStop().trigger()"
-```
-
-### Safe Shutdown
-```powershell
-# Graceful shutdown (processes current signals then stops)
-Ctrl+C in main terminal
-
-# Force stop (immediate)
-taskkill /f /im python.exe
-```
-
-### Backup & Recovery
-```powershell
-# Backup database
-copy signal_ea.db signal_ea_backup_%date%.db
-
-# Backup logs
-copy logs\telegram_ea.log logs\backup\telegram_ea_%date%.log
-
-# Recovery (restore from backup)
-copy signal_ea_backup_YYYY-MM-DD.db signal_ea.db
-```
-
----
-
-## 📁 Important File Locations
-
-```
-telegram-signal-ea/
-├── main.py                    # Main application entry
-├── cli.py                     # Command line interface
-├── signal_ea.db              # SQLite database
-├── logs/telegram_ea.log      # Application logs
-├── .env                      # Environment configuration
-├── telegram_session.session  # Telegram session file
-└── config/                   # Configuration files
-    ├── telegram_config.yaml
-    ├── mt5_config.yaml
-    └── signal_patterns.yaml
-```
-
----
-
-## 🔧 Development & Testing Tools
-
-### Live Testing
-```powershell
-# Monitor signal processing
-python tools/signal_monitor.py
-
-# Test with fake signals
-python tools/signal_simulator.py
-
-# Database viewer
-python tools/db_viewer.py
-```
-
-### Configuration Validation
-```powershell
-# Validate all config files
-python tools/validate_config.py
-
-# Test signal patterns
-python tools/test_patterns.py
-```
-
----
-
-## 📞 Support & Troubleshooting
-
-### Log Analysis
-```powershell
-# Find errors in logs
-findstr /C:"ERROR" logs\telegram_ea.log
-
-# Find correlation issues
-findstr /C:"correlation_confidence" logs\telegram_ea.log
-
-# Find trading activity
-findstr /C:"TRADE" logs\telegram_ea.log
-```
-
-### Common Error Patterns
-- `ConnectionError` → Check internet/MT5/Telegram connectivity
-- `CorrelationError` → Signal correlation confidence too low
-- `DatabaseError` → Database file permissions or corruption
-- `ParsingError` → Unknown signal format received
-
-### Performance Optimization
-```powershell
-# Optimize database
-python -c "from src.database.maintenance import optimize_db; optimize_db()"
-
-# Clear old logs (keep last 30 days)
-forfiles /p logs /s /m *.log /d -30 /c "cmd /c del @path"
-```
-
----
-
-## ✅ Ready to Use Checklist
-
-Before going live:
-- [ ] All tests pass (`pytest tests/`)
-- [ ] Environment variables configured
-- [ ] Telegram authenticated and connected
-- [ ] MT5 running and logged in
-- [ ] OpenAI API key working
-- [ ] Database initialized
-- [ ] Signal patterns loaded
-- [ ] Dashboard displays correctly
-- [ ] Emergency stop tested
-- [ ] Backup procedures verified
-
-**🎉 Your Telegram Signal EA is ready for Windows operation!**
+- [ ] Python 3.12 + venv + `pip install -r requirements.txt` berhasil
+- [ ] `.env` terisi (Telegram, OpenAI, MT5 + `MT5_PATH` bila perlu)
+- [ ] MT5 terminal login + AutoTrading ON
+- [ ] Sesi Telegram berhasil dibuat (`data\telegram.session`)
+- [ ] `pytest tests/unit/ -v` lolos
+- [ ] `python -c "import MetaTrader5 as mt5; print(mt5.initialize())"` mengembalikan `True`
+- [ ] `python main.py` berjalan & logs normal
